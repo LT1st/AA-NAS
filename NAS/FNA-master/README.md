@@ -22,9 +22,12 @@ In our experiments, we conduct FNA on MobileNetV2 to obtain new networks for bot
 <img src="./imgs/det_cost.png" width = "700">
 </div>
 
-## FNA on Object Detection
+## **FNA on Object Detection**
 
 ### Requirements
+For all info, see: [Install from zero](install_mm_series.md)
+
+* cuda 10.1 (Or the mmdet will not able to install)
 
 * python 3.7
 * pytorch 1.1 
@@ -111,3 +114,16 @@ The code of FNA is based on
 * [TorchSeg](https://github.com/ycszen/TorchSeg)
 
 Thanks for the contribution of the above repositories.
+
+
+# Version Contral
+see ENV\ 
+```
+
+conda env export > conda_environment.yml
+conda env create -f environment.yml
+
+pip3 freeze > requirements.txt
+pip3 install -r requirements.txt
+
+```

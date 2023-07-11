@@ -43,4 +43,4 @@ See English Version: [readme in English](./markdown_EN.md)
 | OPANAS    |                |      |                  | https://github.com/LT1st/OPANAS                                             |
 
 ## 接口
-在main.py中控制参数
+在main.py中控制参数，后期再优化流程。
