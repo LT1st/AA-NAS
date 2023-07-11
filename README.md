@@ -1,4 +1,5 @@
 # AA-NAS
+See English Version: [readme in English](./markdown_EN.md)
 ## 文件结构
 | Folder/File Name | Description |
 |------------------|-------------|
@@ -11,7 +12,9 @@
 | AA/              | 用于AA的代码     |
 
 # TODO List
--[ ] 7.4 解决文件结构变化导致的BUG
+- [x] 7.4 解决文件结构变化导致的BUG
+- [x] 7.7 解决FNA的环境适配
+- [ ] deformable思路的替换，使用
 
 ## 数据处理
 - [ ]  用于NAS的coco数据集需要保证不被污染，考虑在使用前利用脚本清理生成的数据
@@ -26,3 +29,18 @@
 - [ ]  muti-shot 搜素太慢  
 - [ ]  zero-shot 如何把数据加进去？ https://github.com/alibaba/lightweight-neural-architecture-search/blob/main/installation.md
 - [x]  one-shot 最合适 DetNAS https://github.com/LT1st/DetNAS
+
+### 开源复现目标
+| 论文      | 特点           | 时间   | 评价               | 地址                                                                        |
+|-----------|----------------|------|------------------|-----------------------------------------------------------------------------|
+| tiny NAS  | Training-Free  | 6小时  | 零样本，加入AE需要调整优化目标 | https://github.com/alibaba/lightweight-neural-architecture-search/tree/main |
+| NAS-FCOS  |                |      |                  |                                                                             |
+| NAS-FPN   |                | 32天  | 早期工作，太慢          | https://github.com/LT1st/NAS_FPN_Tensorflow                                 |
+| NEAS      |                |      |                  | https://github.com/LT1st/NEAS                                               |
+| FNA       |                | 3-4天 | 网络进化的思路，好        | https://github.com/LT1st/FNA                                                |
+| ZenNAS    |       Training-Free         |      |                  | https://github.com/LT1st/ZenNAS                                             |
+| HITDET    |                |      |                  | https://github.com/LT1st/HitDet.pytorch                                     |
+| OPANAS    |                |      |                  | https://github.com/LT1st/OPANAS                                             |
+
+## 接口
+在main.py中控制参数
