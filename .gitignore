@@ -1,6 +1,7 @@
 # 忽略所有以 .a 结尾的文件
 *.a
 *.gz
+*.weights
 
 # 不能忽略所有 lib.a 文件
 !lib.a

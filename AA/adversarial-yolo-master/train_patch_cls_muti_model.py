@@ -102,7 +102,7 @@ class PatchTrainer(object):
         batch_size = self.config.batch_size
         print(batch_size, "BS")
         # batch_size = 56
-        n_epochs = 200
+        n_epochs = 35
         max_lab = 14
         print('img_size',img_size,'batch_size',batch_size,'n_epochs', n_epochs, 'max_lab', max_lab)
 
