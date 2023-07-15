@@ -1,0 +1,5 @@
+tensorboardX
+tensorboard
+tqdm
+matplotlib
+opencv-python

@@ -113,8 +113,8 @@ class ReproducePaperObj(BaseConfig):
     def __init__(self):
         super().__init__()
 
-        self.batch_size = 56    # 3090 24G 56
-        self.patch_size = 200
+        self.batch_size = 128    # 3090 24G 56
+        self.patch_size = 6
 
         self.patch_name = 'ObjectOnlyPaper'
         self.max_tv = 0.165

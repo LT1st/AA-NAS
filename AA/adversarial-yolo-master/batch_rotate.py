@@ -1,3 +1,6 @@
+"""
+测试算法
+"""
 import fnmatch
 import math
 import os
@@ -285,6 +288,7 @@ if __name__ == '__main__':
     darknet_model.load_weights(weightsfile)
     patchapplier = PatchApplier()
     patchtransformer = PatchTransformer()
+    # patchtransformer_cls = patchtransformer_cls()
 
     #use_cuda = True
     #if use_cuda:
