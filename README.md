@@ -25,6 +25,7 @@ See English Version: [readme in English](./markdown_EN.md)
 ## AA using patches
 - [ ]  多模型deformable
 - [ ]  比较循环训练和deformable
+- [x] 包路径问题，import搜索不到，chdir安全，`sys.path.append()`可能yinport不到正确的包
 
 ## NAS for OD
 - [ ]  muti-shot 搜素太慢  

@@ -301,6 +301,18 @@ class PatchTrainer(object):
 
 
 def main():
+
+
+    if len(sys.argv) != 2:
+        print('You need to supply (only) a configuration mode.')
+        print('Possible modes are:')
+        print(patch_config.patch_configs)
+
+
+    trainer = PatchTrainer(sys.argv[1])
+    trainer.train()
+
+if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser("cifar10")
     parser.add_argument('--data', type=str, default='../dataset/CIFAR100_data', help='location of the data corpus')
@@ -315,17 +327,6 @@ def main():
     parser.add_argument('--model_path_1', type=str, default='./weights/yolo.weights', help='Path to pretrained models')
     parser.add_argument('--model_path_2', type=str, default='./weights/yolo.weights', help='Path to pretrained models')
     parser.add_argument('--model_path_3', type=str, default='./weights/yolo.weights', help='Path to pretrained models')
-
-    if len(sys.argv) != 2:
-        print('You need to supply (only) a configuration mode.')
-        print('Possible modes are:')
-        print(patch_config.patch_configs)
-
-
-    trainer = PatchTrainer(sys.argv[1])
-    trainer.train()
-
-if __name__ == '__main__':
     main()
 
 

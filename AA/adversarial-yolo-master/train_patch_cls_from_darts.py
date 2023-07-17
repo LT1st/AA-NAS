@@ -24,6 +24,7 @@ import torchvision
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms
 
+import importlib
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -35,16 +36,7 @@ cifar_path = '../../data/cls/cifar100-pic-version/'
 
 # assert os._exists(pth)
 # 加载模型
-model = models.resnet50(pretrained=False)
-num_ftrs = model.fc.in_features
-model.fc = torch.nn.Linear(num_ftrs, 100)  # 替换最后一层
 
-# 加载预训练权重
-model.load_state_dict(torch.load(pth))
-# model.load_state_dict(torch.jit.load(pth))
-
-# 设置模型为评估模式
-model.eval().cuda()
 
 
 def load_cifar100(root, train=True, transform=None):
@@ -52,17 +44,50 @@ def load_cifar100(root, train=True, transform=None):
     dataset = ImageFolder(data_dir, transform=transform)
     return dataset
 
+def load_darts_model(model_file='./weights/eval-EXP-20230715-071805'):
+    """加载模型
+
+    """
+    assert os.path.exists(model_file)
+    file_path = os.path.join(model_file, 'scripts', 'train.py')
+
+    # 指定模块名
+    module_name = "Network"
+
+    # 创建一个ModuleSpec对象，用于指定模块的源代码文件
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+
+    # 加载并返回该模块
+    Network = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(Network)
+    CIFAR_CLASSES = 10
+
+    # 现在可以使用mypackage中的函数和变量了
+    genotype = eval("genotypes.%s" % args.arch)
+    model = Network(args.init_channels, CIFAR_CLASSES, args.layers, args.auxiliary, genotype)
+    model = model.cuda()
+    return model
+
 
 class PatchTrainer(object):
-    def __init__(self, mode):
+    def __init__(self, mode, args):
         self.config = patch_config.patch_configs[mode]()
         self.img_size_height = 32
-
+        model = models.resnet50(pretrained=False)
+        if args.data_type == 'cifar100':
         # self.darknet_model = Darknet(self.config.cfgfile)
         # self.darknet_model.load_weights(self.config.weightfile)
         # self.darknet_model = self.darknet_model.eval().cuda() # TODO: Why eval?
+            num_ftrs = model.fc.in_features
+            model.fc = torch.nn.Linear(num_ftrs, 100)  # 替换最后一层
+
+        # 加载预训练权重
+        model.load_state_dict(torch.load(pth))
+        # model.load_state_dict(torch.jit.load(pth))
+        # 设置模型为评估模式
+        model.eval().cuda()
         self.darknet_model = model
-        self.cls_model = model
+        # self.cls_model = model
 
         self.patch_applier = PatchApplier().cuda()
 
@@ -74,6 +99,7 @@ class PatchTrainer(object):
         self.total_variation = TotalVariation().cuda()
 
         self.writer = self.init_tensorboard(mode)
+        self.args = args
 
     def init_tensorboard(self, name=None):
         """
@@ -102,7 +128,7 @@ class PatchTrainer(object):
         batch_size = self.config.batch_size
         print(batch_size, "BS")
         # batch_size = 56
-        n_epochs = 200
+        n_epochs = args.epochs
         max_lab = 14
         print('img_size',img_size,'batch_size',batch_size,'n_epochs', n_epochs, 'max_lab', max_lab)
 
@@ -300,17 +326,43 @@ class PatchTrainer(object):
 
 
 
-def main():
-    if len(sys.argv) != 2:
-        print('You need to supply (only) a configuration mode.')
-        print('Possible modes are:')
-        print(patch_config.patch_configs)
+def main(args):
+    # if len(sys.argv) != 2:
+    #     print('You need to supply (only) a configuration mode.')
+    #     print('Possible modes are:')
+    #     print(patch_config.patch_configs)
 
 
-    trainer = PatchTrainer(sys.argv[1])
+    trainer = PatchTrainer('paper_obj', args )
     trainer.train()
 
 if __name__ == '__main__':
-    main()
+    import argparse
 
+    parser = argparse.ArgumentParser("cifar")
+    parser.add_argument('--set', type=str, default='cifar10', help='location of the data corpus')
+    parser.add_argument('--data_type', type=str, default='CIFAR10', help='dataset that is used')
+    parser.add_argument('--data', type=str, default='../../dataset/CIFAR10', help='location of the data corpus')
+    parser.add_argument('--batch_size', type=int, default=128, help='batch size')
+    parser.add_argument('--learning_rate', type=float, default=0.1, help='init learning rate')
+    parser.add_argument('--learning_rate_min', type=float, default=0.0, help='min learning rate')
+    parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
+    parser.add_argument('--weight_decay', type=float, default=3e-4, help='weight decay')
+    parser.add_argument('--report_freq', type=float, default=50, help='report frequency')
+    parser.add_argument('--gpu', type=int, default=0, help='gpu device id')
+    parser.add_argument('--epochs', type=int, default=50, help='num of training epochs')
+    parser.add_argument('--model_path', type=str, default='saved_models', help='path to save the model')
+    parser.add_argument('--save', type=str, default='Data-Pruning', help='experiment name')
+    # interface of whole process
+    parser.add_argument('--model_path_1', type=str, default='../../NAS/pc_darts/eval-EXP-20230715-071805',
+                        help='Path to trained models')
+    parser.add_argument('--arch', type=str, default='PCDARTS', help='which architecture to use')
+    parser.add_argument('--patch_file_path', type=str, default='../../patch_file', help='Path to save patches')
+    parser.add_argument('--NAS_type', type=str, default='DARTS', help='type of NAS')
+    #parser.add_argument('--model_path_2', type=str, default='./weights/yolo.weights', help='Path to pretrained models')
+    #parser.add_argument('--model_path_3', type=str, default='./weights/yolo.weights', help='Path to pretrained models')
+
+    args = parser.parse_args()
+    # main(args)
+    load_darts_model()
 
