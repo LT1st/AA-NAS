@@ -1,0 +1,20 @@
+# 忽略所有以 .a 结尾的文件
+*.a
+*.gz
+*.weights
+
+# 不能忽略所有 lib.a 文件
+!lib.a
+
+# 仅仅忽略当前目录下的 TODO 文件
+/TODO
+
+# 忽略 build 目录下的所有文件
+build/
+data/
+
+# 仅仅忽略 doc 一个目录下的所有 .txt 文件
+doc/*.txt
+
+# 忽略 doc 目录下（包括子目录）的所有 .pdf 文件
+doc/**/*.pdf

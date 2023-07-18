@@ -172,6 +172,191 @@ class TotalVariation(nn.Module):
         return tv/torch.numel(adv_patch)
 
 
+class PatchTransformer_cls(nn.Module):
+    """PatchTransformer: transforms batch of patches 对补丁进行各种变换
+    对抗性补丁进行前向转换。
+    Module providing the functionality necessary to transform a batch of patches, randomly adjusting brightness and
+    contrast, adding random amount of noise, and rotating randomly. Resizes patches according to as size based on the
+    batch of labels, and pads them to the dimension of an image.
+    """
+
+    def __init__(self):
+        super(PatchTransformer_cls, self).__init__()
+        self.min_contrast = 0.8
+        self.max_contrast = 1.2
+        self.min_brightness = -0.1
+        self.max_brightness = 0.1
+        self.noise_factor = 0.10
+        self.minangle = -20 / 180 * math.pi
+        self.maxangle = 20 / 180 * math.pi
+        self.medianpooler = MedianPool2d(7, same=True)
+        '''
+        kernel = torch.cuda.FloatTensor([[0.003765, 0.015019, 0.023792, 0.015019, 0.003765],                                                                                    
+                                         [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],                                                                                    
+                                         [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],                                                                                    
+                                         [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],                                                                                    
+                                         [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]])
+        self.kernel = kernel.unsqueeze(0).unsqueeze(0).expand(3,3,-1,-1)
+        '''
+
+    def forward(self, adv_patch, img_info, img_size, do_rotate=True, rand_loc=True):
+        """
+        参数：
+        adv_patch (torch.Tensor)：形状为 (batch_size, channels, height, width) 的对抗性补丁张量。
+        img_info (list)：形状为 (batch_size, x, y ) 的标签批处理张量。
+        img_size (int)：图像的尺寸。
+        do_rotate (bool, 可选)：是否进行旋转。默认为True。
+        rand_loc (bool, 可选)：是否应用随机位置变换。默认为True。
+
+        返回：
+        torch.Tensor：转换后的对抗性补丁张量，形状与输入相同。
+        """
+        # adv_patch = F.conv2d(adv_patch.unsqueeze(0),self.kernel,padding=(2,2))
+        adv_patch = self.medianpooler(adv_patch.unsqueeze(0))  # CHW 1 3 6 6
+        # Determine size of padding
+        pad = (img_size - adv_patch.size(-1)) / 2
+        # Make a batch of patches
+        # adv_patch = adv_patch.unsqueeze(0)  # .unsqueeze(0)增加维度
+        # bs扩展  c h w保留
+        adv_batch = adv_patch.expand(img_info[0], -1, -1, -1)
+        batch_size = torch.Size([img_info[0]])
+        # batch_size = torch.Size((img_info[0]))  # torch.Size([56, 14])
+
+        #  ------ Contrast, brightness and noise transforms   ------
+
+        # Create random contrast tensor 均匀采样
+        # 64
+        contrast = torch.cuda.FloatTensor(batch_size).uniform_(self.min_contrast, self.max_contrast)
+        # 64 1 1 1
+        contrast = contrast.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+
+        contrast = contrast.expand(-1, adv_batch.size(-3), adv_batch.size(-2), adv_batch.size(-1))
+        contrast = contrast.cuda()
+
+        # Create random brightness tensor
+        brightness = torch.cuda.FloatTensor(batch_size).uniform_(self.min_brightness, self.max_brightness)
+        brightness = brightness.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        brightness = brightness.expand(-1,  adv_batch.size(-3), adv_batch.size(-2), adv_batch.size(-1))
+        brightness = brightness.cuda()
+
+        # Create random noise tensor
+        noise = torch.cuda.FloatTensor(adv_batch.size()).uniform_(-1, 1) * self.noise_factor
+
+        # Apply contrast/brightness/noise, clamp
+        adv_batch = adv_batch * contrast + brightness + noise
+
+        adv_batch = torch.clamp(adv_batch, 0.000001, 0.99999)
+
+        # Where the label class_id is 1 we don't want a patch (padding) --> fill mask with zero's
+        """
+        class_id 为 1 的位置，我们将相应位置的掩码设置为 0，表示不需要进行补丁。而其他位置的掩码保持为 1，表示需要进行补丁。
+        通过这个掩码，我们可以在后续的操作中将不需要进行补丁的位置进行填充（padding）处理，以确保补丁只被应用在目标检测任务中指定的位置上，而不会影响其他位置。 
+        """
+        # cls_ids = torch.narrow(lab_batch, 2, 0, 1) # 第三个维度上扔掉第一个值
+        """
+        input (Tensor) – the tensor to narrow
+        dim (int) – the dimension along which to narrow
+        start (int or Tensor) – index of the element to start the narrowed dimension from. Can be negative, which means
+                    indexing from the end of dim. If Tensor, it must be an 0-dim integral Tensor (bools not allowed)
+        length (int) – length of the narrowed dimension, must be weakly positive
+        """
+        # cls_mask = cls_ids.expand(-1, -1, 3)
+        # cls_mask = cls_mask.unsqueeze(-1)
+        # cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))
+        # cls_mask = cls_mask.unsqueeze(-1)
+        # cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))
+        # # bchw
+        # msk_batch = torch.cuda.FloatTensor(cls_mask.size()).fill_(1) - cls_mask
+
+        # Pad patch and mask to image dimensions
+        mypad = nn.ConstantPad2d((int(pad + 0.5), int(pad), int(pad + 0.5), int(pad)), 0)
+        adv_batch = mypad(adv_batch)
+        # msk_batch = mypad(msk_batch)
+
+        # Rotation and rescaling transforms
+        # anglesize = (img_info[0] * lab_batch.size(1))
+        """
+        if do_rotate:
+            angle = torch.cuda.FloatTensor(anglesize).uniform_(self.minangle, self.maxangle)
+        else:
+            angle = torch.cuda.FloatTensor(anglesize).fill_(0)
+
+        # Resizes and rotates
+        
+        current_patch_size = adv_patch.size(-1)
+        lab_batch_scaled = torch.cuda.FloatTensor(lab_batch.size()).fill_(0)
+        lab_batch_scaled[:, :, 1] = lab_batch[:, :, 1] * img_size
+        lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * img_size
+        lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * img_size
+        lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * img_size
+        target_size = torch.sqrt(
+            ((lab_batch_scaled[:, :, 3].mul(0.2)) ** 2) + ((lab_batch_scaled[:, :, 4].mul(0.2)) ** 2))
+        target_x = lab_batch[:, :, 1].view(np.prod(batch_size))
+        target_y = lab_batch[:, :, 2].view(np.prod(batch_size))
+        targetoff_x = lab_batch[:, :, 3].view(np.prod(batch_size))
+        targetoff_y = lab_batch[:, :, 4].view(np.prod(batch_size))
+        if (rand_loc):
+            off_x = targetoff_x * (torch.cuda.FloatTensor(targetoff_x.size()).uniform_(-0.4, 0.4))
+            target_x = target_x + off_x
+            off_y = targetoff_y * (torch.cuda.FloatTensor(targetoff_y.size()).uniform_(-0.4, 0.4))
+            target_y = target_y + off_y
+        target_y = target_y - 0.05
+        scale = target_size / current_patch_size
+        scale = scale.view(anglesize)
+
+        s = adv_batch.size()
+        adv_batch = adv_batch.view(s[0] * s[1], s[2], s[3], s[4])
+        # msk_batch = msk_batch.view(s[0] * s[1], s[2], s[3], s[4])
+
+        tx = (-target_x + 0.5) * 2
+        ty = (-target_y + 0.5) * 2
+        sin = torch.sin(angle)
+        cos = torch.cos(angle)
+
+        # Theta = rotation,rescale matrix
+        theta = torch.cuda.FloatTensor(anglesize, 2, 3).fill_(0)
+        theta[:, 0, 0] = cos / scale
+        theta[:, 0, 1] = sin / scale
+        theta[:, 0, 2] = tx * cos / scale + ty * sin / scale
+        theta[:, 1, 0] = -sin / scale
+        theta[:, 1, 1] = cos / scale
+        theta[:, 1, 2] = -tx * sin / scale + ty * cos / scale
+
+        b_sh = adv_batch.shape
+        grid = F.affine_grid(theta, adv_batch.shape)
+
+        adv_batch_t = F.grid_sample(adv_batch, grid)
+        # msk_batch_t = F.grid_sample(msk_batch, grid)
+
+        '''
+        # Theta2 = translation matrix
+        theta2 = torch.cuda.FloatTensor(anglesize, 2, 3).fill_(0)
+        theta2[:, 0, 0] = 1
+        theta2[:, 0, 1] = 0
+        theta2[:, 0, 2] = (-target_x + 0.5) * 2
+        theta2[:, 1, 0] = 0
+        theta2[:, 1, 1] = 1
+        theta2[:, 1, 2] = (-target_y + 0.5) * 2
+
+        grid2 = F.affine_grid(theta2, adv_batch.shape)
+        adv_batch_t = F.grid_sample(adv_batch_t, grid2)
+        msk_batch_t = F.grid_sample(msk_batch_t, grid2)
+
+        '''
+        adv_batch_t = adv_batch_t.view(s[0], s[1], s[2], s[3], s[4])
+        # msk_batch_t = msk_batch_t.view(s[0], s[1], s[2], s[3], s[4])
+
+        adv_batch_t = torch.clamp(adv_batch_t, 0.000001, 0.999999)
+        # img = msk_batch_t[0, 0, :, :, :].detach().cpu()
+        # img = transforms.ToPILImage()(img)
+        # img.show()
+        # exit()
+
+        # return adv_batch_t * msk_batch_t
+        """
+        return adv_batch
+
+
 class PatchTransformer(nn.Module):
     """PatchTransformer: transforms batch of patches 对补丁进行各种变换
 
@@ -202,11 +387,12 @@ class PatchTransformer(nn.Module):
         '''
     def forward(self, adv_patch, lab_batch, img_size, do_rotate=True, rand_loc=True):
         #adv_patch = F.conv2d(adv_patch.unsqueeze(0),self.kernel,padding=(2,2))
-        adv_patch = self.medianpooler(adv_patch.unsqueeze(0)) # CHW 3 210 297
+        adv_patch = self.medianpooler(adv_patch.unsqueeze(0)) # CHW 1 3 6 6
         # Determine size of padding
         pad = (img_size - adv_patch.size(-1)) / 2
         # Make a batch of patches
         adv_patch = adv_patch.unsqueeze(0) #.unsqueeze(0)
+        # 64,
         adv_batch = adv_patch.expand(lab_batch.size(0), lab_batch.size(1), -1, -1, -1)
         batch_size = torch.Size((lab_batch.size(0), lab_batch.size(1)))     # torch.Size([56, 14])
         
@@ -342,19 +528,25 @@ class PatchApplier(nn.Module):
         super(PatchApplier, self).__init__()
 
     def forward(self, img_batch, adv_batch):
+        '''
+        args:
+            adv_batch 需要在非patch地方变成o, 在前一步的变换中完成
+        '''
         # 按照第二个维度展开batch
-
-        advs = torch.unbind(adv_batch, 1)
-        for adv in advs:
-            """
-            torch.where函数接受三个张量作为输入：condition、x和y。它返回一个张量，其中每个元素的值由以下规则确定：
-            如果condition中的元素值为True，则使用x中的相应元素值；否则，使用y中的相应元素值。
-            在这个代码中，adv == 0将产生一个与adv张量形状相同的布尔型张量，其中值为True的元素表示对抗性贴片中的相应元素值为0。
-            然后，torch.where((adv == 0), img_batch, adv)将使用原始图像(img_batch)中的元素替换对抗性贴片(adv)中的零元素。
-            换句话说，对抗性贴片中非零元素的值将被保留，而零元素的值将被替换为原始图像中的相应元素值。
-            """
-            # adv和img_batch张量的形状，并确保它们在所有维度上都匹配或可以通过广播来匹配。
-            img_batch = torch.where((adv == 0), img_batch, adv)
+        if True:
+            img_batch = torch.where((adv_batch == 0), img_batch, adv_batch)
+        else:
+            advs = torch.unbind(adv_batch, 1)
+            for adv in advs:
+                """
+                torch.where函数接受三个张量作为输入：condition、x和y。它返回一个张量，其中每个元素的值由以下规则确定：
+                如果condition中的元素值为True，则使用x中的相应元素值；否则，使用y中的相应元素值。
+                在这个代码中，adv == 0将产生一个与adv张量形状相同的布尔型张量，其中值为True的元素表示对抗性贴片中的相应元素值为0。
+                然后，torch.where((adv == 0), img_batch, adv)将使用原始图像(img_batch)中的元素替换对抗性贴片(adv)中的零元素。
+                换句话说，对抗性贴片中非零元素的值将被保留，而零元素的值将被替换为原始图像中的相应元素值。
+                """
+                # adv和img_batch张量的形状，并确保它们在所有维度上都匹配或可以通过广播来匹配。
+                img_batch = torch.where((adv == 0), img_batch, adv)
         return img_batch
 
 '''
@@ -469,6 +661,11 @@ class InriaDataset(Dataset):
         return padded_img, lab
 
     def pad_lab(self, lab):
+        """
+        这段代码的目的是确保标签具有固定的长度（self.max_n_labels），
+        如果标签数量小于最大标签数，就在高度维度上进行填充。
+
+        """
         pad_size = self.max_n_labels - lab.shape[0]
         if(pad_size>0):
             padded_lab = F.pad(lab, (0, 0, 0, pad_size), value=1)

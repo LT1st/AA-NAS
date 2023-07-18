@@ -48,6 +48,10 @@ cd scripts
 sh train_hit_det.sh
 ```
 
+```
+python -m torch.distributed.launch --nproc_per_node=2 train.py --validate --gpus 2 --launcher pytorch --config 'configs/nas_trinity/2stage_hitdet.py' --work_dir './work_dirs/hitdet_1x/'
+```
+
 ### Results on COCO minival
 
 | Model | Params | mAP |

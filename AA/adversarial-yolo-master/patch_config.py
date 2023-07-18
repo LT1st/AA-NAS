@@ -113,10 +113,27 @@ class ReproducePaperObj(BaseConfig):
     def __init__(self):
         super().__init__()
 
-        self.batch_size = 56    # 3090 24G 56
-        self.patch_size = 200
+        self.batch_size = 128    # 3090 24G 56
+        self.patch_size = 6
 
         self.patch_name = 'ObjectOnlyPaper'
+        self.max_tv = 0.165
+
+        self.loss_target = lambda obj, cls: obj
+
+
+class TestCLS(BaseConfig):
+    """
+    Reproduce the results from the paper: Generate a patch that minimises object score.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.batch_size = 128    # 3090 24G 56
+        self.patch_size = 6
+
+        self.patch_name = 'TestCLS'
         self.max_tv = 0.165
 
         self.loss_target = lambda obj, cls: obj
@@ -149,5 +166,6 @@ patch_configs = {
     "exp3_low_res": Experiment3LowRes,
     "exp4_class_only": Experiment4ClassOnly,
     "paper_obj": ReproducePaperObj,
-    "A4RealWorld": A4RealWorldObj
+    "A4RealWorld": A4RealWorldObj,
+    "testing_exp_cls":TestCLS
 }

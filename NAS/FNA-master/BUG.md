@@ -290,3 +290,19 @@ Setting OMP_NUM_THREADS environment variable for each process to be 1 in default
 ```
 
 https://www.yii666.com/blog/211735.html?action=onAll
+
+```
+(FNA) C:\Users\lutao\Desktop\git_AA_NAS\NAS\FNA-master\fna_det>python ./tools/test.py     ./configs/fna_retinanet_fpn_retrain.py     --checkpoint ./retinanet/retin
+anet.pth     --net_config ./retinanet/net_config     --data_path ./coco/     --out ./results.pkl     --eval bbox
+Traceback (most recent call last):
+  File "./tools/test.py", line 9, in <module>
+    import models
+  File "C:\Users\lutao\Desktop\git_AA_NAS\NAS\FNA-master\fna_det\tools\..\models\__init__.py", line 1, in <module>
+    from .derived_retinanet_backbone import FNA_Retinanet
+  File "C:\Users\lutao\Desktop\git_AA_NAS\NAS\FNA-master\fna_det\tools\..\models\derived_retinanet_backbone.py", line 4, in <module>
+    from mmdet.models.registry import BACKBONES
+  File "C:\conda\envs\FNA\lib\site-packages\mmdet-0.6.0-py3.7.egg\mmdet\__init__.py", line 18, in <module>
+    f'MMCV=={mmcv.__version__} is used but incompatible. ' \
+AssertionError: MMCV==0.2.10 is used but incompatible. Please install mmcv>=2.0.0rc4, <2.1.0.
+
+```

@@ -27,6 +27,10 @@ Make sure that you have a working implementation of PyTorch installed, to do thi
 To visualise progress we use tensorboardX which can be installed using pip:
 ```
 pip install tensorboardX tensorboard
+pip install tensorboardX tensorboard -i http://pypi.douban.com/simple Flask  -- trusted-host pypi.douban.com
+或者
+pip install tensorboardX -i http://pypi.douban.com/simple -- trusted-host pypi.douban.com
+
 ```
 No installation is necessary, you can simply run the python code straight from this directory.
 

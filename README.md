@@ -14,7 +14,8 @@ See English Version: [readme in English](./markdown_EN.md)
 # TODO List
 - [x] 7.4 解决文件结构变化导致的BUG
 - [x] 7.7 解决FNA的环境适配
-- [ ] deformable思路的替换，使用
+- [ ] deformable思路的替换，使用交替训练
+- [ ] 7,12 分类模型对不上去， 数据集解压出问题
 
 ## 数据处理
 - [ ]  用于NAS的coco数据集需要保证不被污染，考虑在使用前利用脚本清理生成的数据
@@ -24,6 +25,7 @@ See English Version: [readme in English](./markdown_EN.md)
 ## AA using patches
 - [ ]  多模型deformable
 - [ ]  比较循环训练和deformable
+- [x] 包路径问题，import搜索不到，chdir安全，`sys.path.append()`可能yinport不到正确的包
 
 ## NAS for OD
 - [ ]  muti-shot 搜素太慢  
@@ -43,4 +45,4 @@ See English Version: [readme in English](./markdown_EN.md)
 | OPANAS    |                |      |                  | https://github.com/LT1st/OPANAS                                             |
 
 ## 接口
-在main.py中控制参数
+在main.py中控制参数，后期再优化流程。
