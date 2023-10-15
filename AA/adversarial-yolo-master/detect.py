@@ -35,7 +35,12 @@ def detect(cfgfile, weightfile, imgfile):
     print('%s: Predicted in %f seconds.' % (imgfile, (finish-start)))
 
     class_names = load_class_names(namesfile)
-    plot_boxes(img, boxes, 'predictions.jpg', class_names)
+
+
+    file_name = os.path.basename(imgfile).split('.')[0] + '_predictions'
+    file_name = os.path.join(os.path.dirname(imgfile), file_name)
+
+    my_plot_boxes(img, boxes, file_name, class_names)
 
 def detect_cv2(cfgfile, weightfile, imgfile):
     import cv2
@@ -117,4 +122,4 @@ if __name__ == '__main__':
     else:
         print('Usage: ')
         print('  python detect.py cfgfile weightfile imgfile')
-        #detect('cfg/tiny-yolo-voc.cfg', 'tiny-yolo-voc.weights', 'data/person.jpg', version=1)
+        detect('cfg/yolo.cfg', 'weights/yolo.weights', 'mydata/pic/DSC00164.JPG')

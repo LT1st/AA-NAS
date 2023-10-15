@@ -26,6 +26,8 @@ class BaseConfig(object):
 
         self.batch_size = 20
 
+        self.none_squ_list = ['A4RealWorld', 'ipad_tst']        # 非正方形的配置文件
+
         self.loss_target = lambda obj, cls: obj * cls
 
 
@@ -113,7 +115,7 @@ class ReproducePaperObj(BaseConfig):
     def __init__(self):
         super().__init__()
 
-        self.batch_size = 128    # 3090 24G 56
+        self.batch_size = 56    # 3090 24G 56
         self.patch_size = 6
 
         self.patch_name = 'ObjectOnlyPaper'
@@ -157,6 +159,24 @@ class A4RealWorldObj(BaseConfig):
 
         self.loss_target = lambda obj, cls: obj
 
+class iPadObj(BaseConfig):
+    """
+    Using this patch to test in real world in A4 printed papers.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.batch_size = 56    # 3090 24G 56
+        self.patch_size = 300
+        self.patch_size_x = 160     # A4 paper without thinking print area
+        self.patch_size_y = 200
+
+        self.patch_name = 'ipad_tst'
+        self.max_tv = 0.165
+
+        self.loss_target = lambda obj, cls: obj
+
 
 patch_configs = {
     "base": BaseConfig,
@@ -167,5 +187,6 @@ patch_configs = {
     "exp4_class_only": Experiment4ClassOnly,
     "paper_obj": ReproducePaperObj,
     "A4RealWorld": A4RealWorldObj,
-    "testing_exp_cls":TestCLS
+    "testing_exp_cls" : TestCLS,
+    "ipad_tst" : iPadObj
 }

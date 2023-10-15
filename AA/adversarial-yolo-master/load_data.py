@@ -104,6 +104,7 @@ class MaxProbExtractor(nn.Module):
 
         return max_conf
 
+
 class NPSCalculator(nn.Module):
     """NMSCalculator: calculates the non-printability score of a patch.
 
@@ -150,6 +151,57 @@ class NPSCalculator(nn.Module):
         printability_array = np.float32(printability_array)
         pa = torch.from_numpy(printability_array)
         return pa
+
+
+
+class NPSCalculator_rect(nn.Module):
+    """NMSCalculator: calculates the non-printability score of a patch.
+    专门用于非正方形
+
+    Module providing the functionality necessary to calculate the non-printability score (NMS) of an adversarial patch.
+
+    """
+
+    def __init__(self, printability_file, patch_side):
+        super(NPSCalculator_rect, self).__init__()
+        self.printability_array = nn.Parameter(self.get_printability_array(printability_file, patch_side),requires_grad=False)
+
+    def forward(self, adv_patch):
+        # calculate euclidian distance between colors in patch and colors in printability_array
+        # square root of sum of squared difference
+        color_dist = (adv_patch - self.printability_array+0.000001)
+        color_dist = color_dist ** 2
+        color_dist = torch.sum(color_dist, 1)+0.000001
+        color_dist = torch.sqrt(color_dist)
+        # only work with the min distance
+        color_dist_prod = torch.min(color_dist, 0)[0] #test: change prod for min (find distance to closest color)
+        # calculate the nps by summing over all pixels
+        nps_score = torch.sum(color_dist_prod,0)
+        nps_score = torch.sum(nps_score,0)
+        return nps_score/torch.numel(adv_patch)
+
+    def get_printability_array(self, printability_file, side):
+        printability_list = []
+
+        # read in printability triplets and put them in a list
+        with open(printability_file) as f:
+            for line in f:
+                printability_list.append(line.split(","))
+
+        printability_array = []
+        for printability_triplet in printability_list:
+            printability_imgs = []
+            red, green, blue = printability_triplet
+            printability_imgs.append(np.full((side[0], side[1]), red))
+            printability_imgs.append(np.full((side[0], side[1]), green))
+            printability_imgs.append(np.full((side[0], side[1]), blue))
+            printability_array.append(printability_imgs)
+
+        printability_array = np.asarray(printability_array)
+        printability_array = np.float32(printability_array)
+        pa = torch.from_numpy(printability_array)
+        return pa
+
 
 
 class TotalVariation(nn.Module):
@@ -357,6 +409,180 @@ class PatchTransformer_cls(nn.Module):
         return adv_batch
 
 
+class PatchTransformerIPad(nn.Module):
+    """
+    PatchTransformer类用于对一批图像进行变换，包括随机调整亮度和对比度，添加随机噪声，随机旋转等。
+    最后，该类将根据标签批次的大小调整图像的大小，并将图像填充到具有图像维度的尺寸。
+    """
+
+    def __init__(self):
+        super(PatchTransformerIPad, self).__init__()
+        self.min_contrast = 0.8
+        self.max_contrast = 1.2
+        self.min_brightness = -0.1
+        self.max_brightness = 0.1
+        self.noise_factor = 0.10
+        self.minangle = -20 / 180 * math.pi
+        self.maxangle = 20 / 180 * math.pi
+        self.medianpooler = MedianPool2d(7, same=True)
+        '''
+        kernel = torch.cuda.FloatTensor([[0.003765, 0.015019, 0.023792, 0.015019, 0.003765],                                                                                    
+                                         [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],                                                                                    
+                                         [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],                                                                                    
+                                         [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],                                                                                    
+                                         [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]])
+        self.kernel = kernel.unsqueeze(0).unsqueeze(0).expand(3,3,-1,-1)
+        '''
+
+    def forward(self, adv_patch, lab_batch, img_size, ipad_pose=None, env_info=None):
+        """
+        对一批图像进行随机变换的前向传播函数。
+        adv_patch: 待处理的图像
+        lab_batch: 图像对应的标签
+        img_size: 图像的大小
+        ipad_pose 用于传递patch四个角
+
+        """
+        # 使用中值池化器进行池化
+        # adv_patch = F.conv2d(adv_patch.unsqueeze(0),self.kernel,padding=(2,2))
+        adv_patch = self.medianpooler(adv_patch.unsqueeze(0))  # CHW 1 3 6 6
+        # Determine size of padding
+        pad = (img_size - adv_patch.size(-1)) / 2
+        pad_x = (img_size - adv_patch.size(-2)) / 2
+        pad_y = (img_size - adv_patch.size(-1)) / 2
+        # Make a batch of patches
+        adv_patch = adv_patch.unsqueeze(0)  # .unsqueeze(0)
+        # 64,
+        adv_batch = adv_patch.expand(lab_batch.size(0), lab_batch.size(1), -1, -1, -1)
+        batch_size = torch.Size((lab_batch.size(0), lab_batch.size(1)))  # torch.Size([56, 14])
+
+        # Contrast, brightness and noise transforms
+
+        # Create random contrast tensor
+        contrast = torch.cuda.FloatTensor(batch_size).uniform_(self.min_contrast, self.max_contrast)
+        contrast = contrast.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        contrast = contrast.expand(-1, -1, adv_batch.size(-3), adv_batch.size(-2), adv_batch.size(-1))
+        contrast = contrast.cuda()
+
+        # Create random brightness tensor
+        brightness = torch.cuda.FloatTensor(batch_size).uniform_(self.min_brightness, self.max_brightness)
+        brightness = brightness.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        brightness = brightness.expand(-1, -1, adv_batch.size(-3), adv_batch.size(-2), adv_batch.size(-1))
+        brightness = brightness.cuda()
+
+        # Create random noise tensor
+        noise = torch.cuda.FloatTensor(adv_batch.size()).uniform_(-1, 1) * self.noise_factor
+
+        # Apply contrast/brightness/noise, clamp
+        adv_batch = adv_batch * contrast + brightness + noise
+
+        adv_batch = torch.clamp(adv_batch, 0.000001, 0.99999)
+
+        # Where the label class_id is 1 we don't want a patch (padding) --> fill mask with zero's
+        # 对标签为1的位置进行填充（不希望在这些位置添加补丁）
+        cls_ids = torch.narrow(lab_batch, 2, 0, 1)
+        cls_mask = cls_ids.expand(-1, -1, 3)
+        cls_mask = cls_mask.unsqueeze(-1)
+        cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))
+        cls_mask = cls_mask.unsqueeze(-1)
+        cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))
+        msk_batch = torch.cuda.FloatTensor(cls_mask.size()).fill_(1) - cls_mask
+
+        # Pad patch and mask to image dimensions
+        mypad = nn.ConstantPad2d((int(pad + 0.5), int(pad), int(pad + 0.5), int(pad)), 0)
+        adv_batch = mypad(adv_batch)
+        msk_batch = mypad(msk_batch)
+
+        # Rotation and rescaling transforms
+        anglesize = (lab_batch.size(0) * lab_batch.size(1))
+        if do_rotate:
+            angle = torch.cuda.FloatTensor(anglesize).uniform_(self.minangle, self.maxangle)
+        else:
+            angle = torch.cuda.FloatTensor(anglesize).fill_(0)
+
+        # Resizes and rotates
+        current_patch_size = adv_patch.size(-1)
+        lab_batch_scaled = torch.cuda.FloatTensor(lab_batch.size()).fill_(0)
+        lab_batch_scaled[:, :, 1] = lab_batch[:, :, 1] * img_size
+        lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * img_size
+        lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * img_size
+        lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * img_size
+        target_size = torch.sqrt(
+            ((lab_batch_scaled[:, :, 3].mul(0.2)) ** 2) + ((lab_batch_scaled[:, :, 4].mul(0.2)) ** 2))
+        target_x = lab_batch[:, :, 1].view(np.prod(batch_size))
+        target_y = lab_batch[:, :, 2].view(np.prod(batch_size))
+        targetoff_x = lab_batch[:, :, 3].view(np.prod(batch_size))
+        targetoff_y = lab_batch[:, :, 4].view(np.prod(batch_size))
+        if (rand_loc):
+            off_x = targetoff_x * (torch.cuda.FloatTensor(targetoff_x.size()).uniform_(-0.4, 0.4))
+            target_x = target_x + off_x
+            off_y = targetoff_y * (torch.cuda.FloatTensor(targetoff_y.size()).uniform_(-0.4, 0.4))
+            target_y = target_y + off_y
+        target_y = target_y - 0.05
+        scale = target_size / current_patch_size
+        scale = scale.view(anglesize)
+
+        s = adv_batch.size()
+        adv_batch = adv_batch.view(s[0] * s[1], s[2], s[3], s[4])
+        msk_batch = msk_batch.view(s[0] * s[1], s[2], s[3], s[4])
+
+        tx = (-target_x + 0.5) * 2
+        ty = (-target_y + 0.5) * 2
+        sin = torch.sin(angle)
+        cos = torch.cos(angle)
+
+        # Theta = rotation,rescale matrix
+        theta = torch.cuda.FloatTensor(anglesize, 2, 3).fill_(0)
+        theta[:, 0, 0] = cos / scale
+        theta[:, 0, 1] = sin / scale
+        theta[:, 0, 2] = tx * cos / scale + ty * sin / scale
+        theta[:, 1, 0] = -sin / scale
+        theta[:, 1, 1] = cos / scale
+        theta[:, 1, 2] = -tx * sin / scale + ty * cos / scale
+
+        b_sh = adv_batch.shape
+        grid = F.affine_grid(theta, adv_batch.shape)
+
+        adv_batch_t = F.grid_sample(adv_batch, grid)
+        msk_batch_t = F.grid_sample(msk_batch, grid)
+
+        # ----------------------- 用于透视变换 ---------------------------
+        # 定义目标四个角的坐标
+        src_corners = torch.tensor([[100, 100], [200, 200], [300, 150], [150, 300]], dtype=torch.float32)
+
+        # 定义目标四边形区域的大小
+        dst_size = (300, 300)
+
+        # 进行透视变换
+        transformed_image = F.perspective(adv_batch_t, src_corners, dst_size, interpolation=Image.BILINEAR)
+
+        '''
+        # Theta2 = translation matrix
+        theta2 = torch.cuda.FloatTensor(anglesize, 2, 3).fill_(0)
+        theta2[:, 0, 0] = 1
+        theta2[:, 0, 1] = 0
+        theta2[:, 0, 2] = (-target_x + 0.5) * 2
+        theta2[:, 1, 0] = 0
+        theta2[:, 1, 1] = 1
+        theta2[:, 1, 2] = (-target_y + 0.5) * 2
+
+        grid2 = F.affine_grid(theta2, adv_batch.shape)
+        adv_batch_t = F.grid_sample(adv_batch_t, grid2)
+        msk_batch_t = F.grid_sample(msk_batch_t, grid2)
+
+        '''
+        adv_batch_t = adv_batch_t.view(s[0], s[1], s[2], s[3], s[4])
+        msk_batch_t = msk_batch_t.view(s[0], s[1], s[2], s[3], s[4])
+
+        adv_batch_t = torch.clamp(adv_batch_t, 0.000001, 0.999999)
+        # img = msk_batch_t[0, 0, :, :, :].detach().cpu()
+        # img = transforms.ToPILImage()(img)
+        # img.show()
+        # exit()
+
+        return adv_batch_t * msk_batch_t
+
+
 class PatchTransformer(nn.Module):
     """PatchTransformer: transforms batch of patches 对补丁进行各种变换
 
@@ -390,9 +616,11 @@ class PatchTransformer(nn.Module):
         adv_patch = self.medianpooler(adv_patch.unsqueeze(0)) # CHW 1 3 6 6
         # Determine size of padding
         pad = (img_size - adv_patch.size(-1)) / 2
+        pad_x = (img_size - adv_patch.size(-2)) / 2
+        pad_y = (img_size - adv_patch.size(-1)) / 2
         # Make a batch of patches
         adv_patch = adv_patch.unsqueeze(0) #.unsqueeze(0)
-        # 64,
+        # B N CHW todo 14 什么意思
         adv_batch = adv_patch.expand(lab_batch.size(0), lab_batch.size(1), -1, -1, -1)
         batch_size = torch.Size((lab_batch.size(0), lab_batch.size(1)))     # torch.Size([56, 14])
         
@@ -422,17 +650,22 @@ class PatchTransformer(nn.Module):
         adv_batch = torch.clamp(adv_batch, 0.000001, 0.99999)
 
         # Where the label class_id is 1 we don't want a patch (padding) --> fill mask with zero's
+        #         torch.narrow(input, dim, start, length) 从0开始，取出1个
         cls_ids = torch.narrow(lab_batch, 2, 0, 1)
-        cls_mask = cls_ids.expand(-1, -1, 3)
+        cls_mask = cls_ids.expand(-1, -1, 3)        # 56 14 3
+        cls_mask = cls_mask.unsqueeze(-1)           # 56 14 3 1
+        cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))   # 56 14 3 210
         cls_mask = cls_mask.unsqueeze(-1)
-        cls_mask = cls_mask.expand(-1, -1, -1, adv_batch.size(3))
-        cls_mask = cls_mask.unsqueeze(-1)
-        cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))
+        cls_mask = cls_mask.expand(-1, -1, -1, -1, adv_batch.size(4))    # 56 14 3 210 297
         msk_batch = torch.cuda.FloatTensor(cls_mask.size()).fill_(1) - cls_mask
 
         # Pad patch and mask to image dimensions
-        mypad = nn.ConstantPad2d((int(pad + 0.5), int(pad), int(pad + 0.5), int(pad)), 0)
-        adv_batch = mypad(adv_batch)
+        mypad = nn.ConstantPad2d((int(pad_y + 0.5), int(pad_y), int(pad_x + 0.5), int(pad_x)), 0)
+        # mypad = nn.ConstantPad2d((int(pad + 0.5), int(pad), int(pad + 0.5), int(pad)), 0)
+
+        # a = nn.ConstantPad2d((int(pad_x + 0.5), int(pad_x), int(pad_y + 0.5), int(pad_y)), 0)
+        # b = a(adv_batch)
+        adv_batch = mypad(adv_batch)    # 210 297 -> 329,416 应该是416 416
         msk_batch = mypad(msk_batch)
 
 
@@ -446,10 +679,15 @@ class PatchTransformer(nn.Module):
         # Resizes and rotates
         current_patch_size = adv_patch.size(-1)
         lab_batch_scaled = torch.cuda.FloatTensor(lab_batch.size()).fill_(0)
+        # label rescale to image size
         lab_batch_scaled[:, :, 1] = lab_batch[:, :, 1] * img_size
         lab_batch_scaled[:, :, 2] = lab_batch[:, :, 2] * img_size
         lab_batch_scaled[:, :, 3] = lab_batch[:, :, 3] * img_size
         lab_batch_scaled[:, :, 4] = lab_batch[:, :, 4] * img_size
+        """ batch * max lab   不够了padding
+        [ 56.3835,  42.9824,  24.4000,  58.1799,  19.5390,  18.8357, 117.6626,
+        117.6626, 117.6626, 117.6626, 117.6626, 117.6626, 117.6626, 117.6626
+        """
         target_size = torch.sqrt(((lab_batch_scaled[:, :, 3].mul(0.2)) ** 2) + ((lab_batch_scaled[:, :, 4].mul(0.2)) ** 2))
         target_x = lab_batch[:, :, 1].view(np.prod(batch_size))
         target_y = lab_batch[:, :, 2].view(np.prod(batch_size))
@@ -461,11 +699,13 @@ class PatchTransformer(nn.Module):
             off_y = targetoff_y*(torch.cuda.FloatTensor(targetoff_y.size()).uniform_(-0.4,0.4))
             target_y = target_y + off_y
         target_y = target_y - 0.05
+        # 图像与patch的比例
         scale = target_size / current_patch_size
+
         scale = scale.view(anglesize)
 
-        s = adv_batch.size()
-        adv_batch = adv_batch.view(s[0] * s[1], s[2], s[3], s[4])
+        s = adv_batch.size()        # 128 14 3 416 416
+        adv_batch = adv_batch.view(s[0] * s[1], s[2], s[3], s[4])   # 1792 .。。
         msk_batch = msk_batch.view(s[0] * s[1], s[2], s[3], s[4])
 
 
@@ -482,8 +722,13 @@ class PatchTransformer(nn.Module):
         theta[:, 1, 0] = -sin/scale
         theta[:, 1, 1] = cos/scale
         theta[:, 1, 2] = -tx*sin/scale+ty*cos/scale
+        """
+        tensor([[ 0.1063,  0.0043,  0.0148],
+        [-0.0043,  0.1063, -0.0108]], device='cuda:0')
+        """
 
         b_sh = adv_batch.shape
+        # 映射
         grid = F.affine_grid(theta, adv_batch.shape)
 
         adv_batch_t = F.grid_sample(adv_batch, grid)
@@ -508,6 +753,7 @@ class PatchTransformer(nn.Module):
         adv_batch_t = adv_batch_t.view(s[0], s[1], s[2], s[3], s[4])
         msk_batch_t = msk_batch_t.view(s[0], s[1], s[2], s[3], s[4])
 
+        # 对adv_batch_t进行裁剪以确保其值在[0.000001, 0.999999]之间
         adv_batch_t = torch.clamp(adv_batch_t, 0.000001, 0.999999)
         #img = msk_batch_t[0, 0, :, :, :].detach().cpu()
         #img = transforms.ToPILImage()(img)
@@ -533,7 +779,7 @@ class PatchApplier(nn.Module):
             adv_batch 需要在非patch地方变成o, 在前一步的变换中完成
         '''
         # 按照第二个维度展开batch
-        if True:
+        if False:
             img_batch = torch.where((adv_batch == 0), img_batch, adv_batch)
         else:
             advs = torch.unbind(adv_batch, 1)
@@ -546,6 +792,7 @@ class PatchApplier(nn.Module):
                 换句话说，对抗性贴片中非零元素的值将被保留，而零元素的值将被替换为原始图像中的相应元素值。
                 """
                 # adv和img_batch张量的形状，并确保它们在所有维度上都匹配或可以通过广播来匹配。
+
                 img_batch = torch.where((adv == 0), img_batch, adv)
         return img_batch
 
@@ -651,6 +898,8 @@ class InriaDataset(Dataset):
                 lab[:, [1]] = (lab[:, [1]] * w + padding) / h
                 lab[:, [3]] = (lab[:, [3]] * w / h)
             else:
+                # 在高度上进行填充。计算填充量 padding，创建一个尺寸为 (w, w) 的新图像 padded_img，并用灰色 (127, 127, 127) 填充整个图像。
+                # 然后将原始图片粘贴到 padded_img 的适当位置，调整 lab 中的相关值以保持与图片的对应关系。
                 padding = (w - h) / 2
                 padded_img = Image.new('RGB', (w, w), color=(127,127,127))
                 padded_img.paste(img, (0, int(padding)))

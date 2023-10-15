@@ -30,7 +30,10 @@ class PatchTrainer(object):
         self.patch_applier = PatchApplier().cuda()
         self.patch_transformer = PatchTransformer().cuda()  # TODO:修改patch适应环境性
         self.prob_extractor = MaxProbExtractor(0, 80, self.config).cuda()
-        self.nps_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
+        if self.config.patch_name in self.config.none_squ_list:
+            self.nps_calculator = NPSCalculator_rect(self.config.printfile,  (self.config.patch_size_x,  self.config.patch_size_y)).cuda()
+        else:
+            self.nps_calculator = NPSCalculator(self.config.printfile, self.config.patch_size).cuda()
         self.total_variation = TotalVariation().cuda()
 
         self.writer = self.init_tensorboard(mode)
@@ -98,19 +101,20 @@ class PatchTrainer(object):
                     img_batch = img_batch.cuda()
                     lab_batch = lab_batch.cuda()
                     #print('TRAINING EPOCH %i, BATCH %i'%(epoch, i_batch))
-                    adv_patch = adv_patch_cpu.cuda()    # torch.size: 3 210 297
+                    adv_patch = adv_patch_cpu.cuda()    # adv_patch.size: 3 210 297
                     x = torch.zeros(3, 210, 210)
                     x = x.cuda()
+                    # adv_patch.size: 3 210 297   img_size 416
                     adv_batch_t = self.patch_transformer(adv_patch, lab_batch, img_size, do_rotate=True, rand_loc=False)
                     # 矩形：torch.size: 56 14 3 329 416   329哪儿来的 减出来的
                     # 方形：torch.size: 56 14 3 416 416 BNCHW
-                    # 更改A4后，这边报错
-                    p_img_batch = self.patch_applier(img_batch, adv_batch_t) # torch.Size([56, 3, 329, 416])
+                    # todo 更改A4后，这边报错
+                    p_img_batch = self.patch_applier(img_batch, adv_batch_t)    # torch.Size([56, 3, 329, 416])
                     p_img_batch = F.interpolate(p_img_batch, (self.darknet_model.height, self.darknet_model.width))
 
                     img = p_img_batch[1, :, :,]
                     img = transforms.ToPILImage()(img.detach().cpu())
-                    #img.show()
+                    # img.show()
 
 
                     output = self.darknet_model(p_img_batch)
@@ -162,6 +166,9 @@ class PatchTrainer(object):
 
             im = transforms.ToPILImage('RGB')(adv_patch_cpu)
             plt.imshow(im)
+            folder_path = 'pics'  # 文件夹路径
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
             plt.savefig(f'pics/{time_str}_{self.config.patch_name}_{epoch}.png')
 
             scheduler.step(ep_loss)
@@ -187,7 +194,7 @@ class PatchTrainer(object):
         :param type: Can be 'gray' or 'random'. Whether or not generate a gray or a random patch.
         :return:
         """
-        if self.config.patch_name == "A4RealWorld":
+        if self.config.patch_name in self.config.none_squ_list:
             if type == 'gray':
                 adv_patch_cpu = torch.full((3, self.config.patch_size_x, self.config.patch_size_y), 0.5)
             elif type == 'random':

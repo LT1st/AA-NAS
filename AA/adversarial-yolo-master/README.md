@@ -2,6 +2,7 @@
 ## 训练patch
 ## patch贴上去
 ## 验证精度
+## loss with bkg(without human) and path
 
 
 
@@ -108,6 +109,7 @@ About 35s for every inter in 3090 24G in Win.
 
 
 # details
+```
 ep_det_loss += det_loss.detach().cpu().numpy()
 ep_nps_loss += nps_loss.detach().cpu().numpy()
 ep_tv_loss += tv_loss.detach().cpu().numpy()
@@ -116,7 +118,7 @@ ep_loss += loss
 
 nps_loss = nps*0.01
 tv_loss = tv*2.5
-
+```
 # LOG
 ## 第一阶段： 复现指标
 6.6结束
@@ -126,3 +128,6 @@ tv_loss = tv*2.5
 - 发现了对于亮度信息没有适配，没有对于纸张的适配
 - 没有边框
 - 灰度亮度均衡化？
+
+# 变量
+max_lab 最多检测人数

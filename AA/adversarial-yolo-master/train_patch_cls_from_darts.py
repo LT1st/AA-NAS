@@ -26,14 +26,27 @@ from torchvision.transforms import transforms
 
 import importlib
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 pth = '../../weights/resnet50_cifar100.pth'
 data = '../../data/cls/cifar-100-python.tar.gz'
 cifar_path = '../../data/cls/cifar100-pic-version/'
 
+# --------------------------------------------------------------------
+import sys
 
+env_file = './weights/darts_res_1/scripts'
+sys.path.append(env_file)
+model_path = './weights/darts_res_1/weights.pt'
+from weights.darts_res_1.scripts.using_model import Load_Model
 
+# if __name__ == "__main__":
+#     model= Load_Model()
+#     this_model = model.model
+    # 从sys.path中删除指定目录
+    # sys.path.remove(env_file)
+
+# --------------------------------------------------------------------
 # assert os._exists(pth)
 # 加载模型
 
@@ -73,16 +86,18 @@ class PatchTrainer(object):
     def __init__(self, mode, args):
         self.config = patch_config.patch_configs[mode]()
         self.img_size_height = 32
-        model = models.resnet50(pretrained=False)
-        if args.data_type == 'cifar100':
-        # self.darknet_model = Darknet(self.config.cfgfile)
-        # self.darknet_model.load_weights(self.config.weightfile)
-        # self.darknet_model = self.darknet_model.eval().cuda() # TODO: Why eval?
-            num_ftrs = model.fc.in_features
-            model.fc = torch.nn.Linear(num_ftrs, 100)  # 替换最后一层
+        model_= Load_Model(model_path)
+        model = model_.getmodel()
+        # model = models.resnet50(pretrained=False)
+        # if args.data_type == 'cifar100':
+        # # self.darknet_model = Darknet(self.config.cfgfile)
+        # # self.darknet_model.load_weights(self.config.weightfile)
+        # # self.darknet_model = self.darknet_model.eval().cuda() # TODO: Why eval?
+        #     num_ftrs = model.fc.in_features
+        #     model.fc = torch.nn.Linear(num_ftrs, 100)  # 替换最后一层
 
         # 加载预训练权重
-        model.load_state_dict(torch.load(pth))
+        # model.load_state_dict(torch.load(pth))
         # model.load_state_dict(torch.jit.load(pth))
         # 设置模型为评估模式
         model.eval().cuda()
@@ -363,6 +378,6 @@ if __name__ == '__main__':
     #parser.add_argument('--model_path_3', type=str, default='./weights/yolo.weights', help='Path to pretrained models')
 
     args = parser.parse_args()
-    # main(args)
-    load_darts_model()
+    main(args)
+    # load_darts_model()
 
