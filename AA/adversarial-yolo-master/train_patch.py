@@ -19,6 +19,8 @@ import subprocess
 import patch_config
 import sys
 import time
+from tools.simlarity.sim_calculate import SimScore
+
 
 class PatchTrainer(object):
     def __init__(self, mode):
@@ -38,6 +40,9 @@ class PatchTrainer(object):
 
         self.writer = self.init_tensorboard(mode)
 
+        self.sim_scorer = SimScore(cal_dev=1, fea_method='canny', sim_method='rmse')    # 相似度衡量
+        self.gpuid = 0
+
     def init_tensorboard(self, name=None):
         """
         BUG ：启动不了 tensorboard将 subprocess.Popen() 函数调用中的命令行参数修改为以下格式：
@@ -54,6 +59,21 @@ class PatchTrainer(object):
             return SummaryWriter(f'runs/{time_str}_{name}')
         else:
             return SummaryWriter()
+
+    def visualize_tensor(self, tensor, index=0):
+        # 将 Tensor 复制到 CPU
+        tensor_cpu = tensor.cpu()
+
+        # 获取指定索引位置的 CHW 维度的图像
+        image_tensor = tensor_cpu[index]
+
+        # 将 Tensor 转换为 NumPy 数组
+        image_array = image_tensor.detach().numpy()
+
+        # 可视化图像
+        plt.imshow(image_array)
+        plt.axis('off')
+        plt.show()
 
     def train(self):
         """
@@ -94,6 +114,7 @@ class PatchTrainer(object):
             ep_nps_loss = 0
             ep_tv_loss = 0
             ep_loss = 0
+            ep_sim_loss = 0
             bt0 = time.time()
             for i_batch, (img_batch, lab_batch) in tqdm(enumerate(train_loader), desc=f'Running epoch {epoch}',
                                                         total=self.epoch_length):
@@ -102,18 +123,44 @@ class PatchTrainer(object):
                     lab_batch = lab_batch.cuda()
                     #print('TRAINING EPOCH %i, BATCH %i'%(epoch, i_batch))
                     adv_patch = adv_patch_cpu.cuda()    # adv_patch.size: 3 210 297
-                    x = torch.zeros(3, 210, 210)
-                    x = x.cuda()
+                    # x = torch.zeros(3, 210, 210)
+                    # x = x.cuda()
                     # adv_patch.size: 3 210 297   img_size 416
                     adv_batch_t = self.patch_transformer(adv_patch, lab_batch, img_size, do_rotate=True, rand_loc=False)
-                    # 矩形：torch.size: 56 14 3 329 416   329哪儿来的 减出来的
-                    # 方形：torch.size: 56 14 3 416 416 BNCHW
-                    # todo 更改A4后，这边报错
                     p_img_batch = self.patch_applier(img_batch, adv_batch_t)    # torch.Size([56, 3, 329, 416])
                     p_img_batch = F.interpolate(p_img_batch, (self.darknet_model.height, self.darknet_model.width))
 
-                    img = p_img_batch[1, :, :,]
-                    img = transforms.ToPILImage()(img.detach().cpu())
+                    tensor1 = img_batch.to('cuda:1')
+                    # original_shape = tensor1.shape
+                    # # 获取 B 和 N 的乘积，作为新的批次维度
+                    # new_batch_size = original_shape[0] * original_shape[1]
+                    # # 保持通道、高度和宽度维度不变
+                    # new_shape = (new_batch_size, original_shape[2], original_shape[3], original_shape[4])
+                    # # 使用 view() 方法重新调整形状
+                    # output_tensor = tensor1.view(new_shape)
+                    # output_tensor = output_tensor.squeeze()
+                    # print(output_tensor.shape, "transformed output_tensor")
+
+                    tensor2 = p_img_batch.to('cuda:1')
+                    # print(p_img_batch.shape, "img_batch ")
+                    # original_shape = tensor2.shape
+                    # # 获取 B 和 N 的乘积，作为新的批次维度
+                    # new_batch_size = original_shape[0] * original_shape[1]
+                    # # 保持通道、高度和宽度维度不变
+                    # new_shape = (new_batch_size, original_shape[2], original_shape[3], original_shape[4])
+                    # # 使用 view() 方法重新调整形状
+                    # output_tensor2 = tensor2.view(new_shape)
+                    # output_tensor2 = output_tensor2.squeeze()
+                    # print(output_tensor2.shape, "transformed output_tensor2")
+                    # # 矩形：torch.size: 56 14 3 329 416   329哪儿来的 减出来的
+                    # # 方形：torch.size: 56 14 3 416 416 BNCHW
+                    # print("given:",adv_batch_t.shape, adv_batch_t.shape)
+                    sim_score = self.sim_scorer.get_sim_score(tensor1, tensor2)
+                    # print(sim_score.shape)
+                    # # 更改A4后，这边报错 # Done
+
+                    # img = p_img_batch[1, :, :,]
+                    # img = transforms.ToPILImage()(img.detach().cpu())
                     # img.show()
 
 
@@ -126,12 +173,15 @@ class PatchTrainer(object):
                     nps_loss = nps*0.01
                     tv_loss = tv*2.5
                     det_loss = torch.mean(max_prob)
-                    loss = det_loss + nps_loss + torch.max(tv_loss, torch.tensor(0.1).cuda())
+                    sim_loss = torch.sum(1-sim_score)
+                    # sim_loss.cuda()
+                    loss = det_loss + nps_loss + torch.max(tv_loss, torch.tensor(0.1).cuda())+sim_loss
 
                     ep_det_loss += det_loss.detach().cpu().numpy()
                     ep_nps_loss += nps_loss.detach().cpu().numpy()
                     ep_tv_loss += tv_loss.detach().cpu().numpy()
                     ep_loss += loss
+                    ep_sim_loss += sim_loss.detach().cpu().numpy()
 
                     loss.backward()
                     optimizer.step()
@@ -148,6 +198,7 @@ class PatchTrainer(object):
                         self.writer.add_scalar('loss/det_loss', det_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/nps_loss', nps_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('loss/tv_loss', tv_loss.detach().cpu().numpy(), iteration)
+                        self.writer.add_scalar('loss/sim_loss', sim_loss.detach().cpu().numpy(), iteration)
                         self.writer.add_scalar('misc/epoch', epoch, iteration)
                         self.writer.add_scalar('misc/learning_rate', optimizer.param_groups[0]["lr"], iteration)
 
