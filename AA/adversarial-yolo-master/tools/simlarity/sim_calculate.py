@@ -34,7 +34,7 @@ def timmer(func):  # 传入的参数是一个函数
 
 
 class CannyEdgeDetection(nn.Module):
-    def __init__(self,in_channels=3):
+    def __init__(self, in_channels=3):
         super(CannyEdgeDetection, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 4, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(4, 8, kernel_size=3, padding=1)
@@ -75,6 +75,10 @@ class SimScore:
             model = nn.Sequential(*list(model.children())[:-1])  # remove last layer
             model.eval()  # set the model to evaluation mode
             self.model = model.to(self.cal_device)
+
+        # if fea_method == 'canny':
+        #
+        #     self.model = model.to(self.cal_device)
 
     def get_calculator(self, names_list):
         cals = []
@@ -208,6 +212,47 @@ class SimScore:
         result_t = torch.tensor(result)
         return result_t
 
+    def cal_sim_grad(self, tensor1, tensor2):
+        tensor1 = tensor1.cpu()
+        tensor2 = tensor2.cpu()
+        if DEBUG:
+            print("cal_sim",tensor1.shape, tensor2.size(), tensor2.size(0))
+        result = []
+        # dims = len(tensor1.shape)
+        # original_shape = tensor1.shape
+        # new_batch_size = original_shape[0] * original_shape[1]
+        # new_shape = (new_batch_size, original_shape[2], original_shape[3], original_shape[4])
+        # # 使用 view() 方法重新调整形状
+        # tensor1 = tensor1.view(new_shape)
+        # tensor2 = tensor2.view(new_shape)
+        # print(tensor1.shape, tensor2.size(), tensor2.size(0))
+        # # if dims == 5:
+        # #     tensor1 = self.dim5_to_dim4(tensor1)
+        # #
+        # #     tensor2 = self.dim5_to_dim4_2(tensor2)
+        # tensor1 = tensor1.squeeze()
+        # tensor2 = tensor2.squeeze()
+
+        if DEBUG:
+            print(tensor1.shape,tensor2.size(),tensor2.size(0))
+        tensor1_ = tensor1
+        tensor2_ = tensor2
+        if DEBUG:
+            print(tensor1_.shape, tensor2_.size(), tensor2_.size(0))
+        assert tensor1_.size(0) == tensor2_.size(0)
+        for i in range(tensor1_.size(0)):
+            img1 = np.array(tensor1_[i])
+            img2 = np.array(tensor2_[i])
+            if len(img1.shape) ==2:
+                img1 = np.expand_dims(img1, axis=-1)
+                img2 = np.expand_dims(img2, axis=-1)
+            if DEBUG:
+                print(img1.shape, img2.shape)
+            # img1 = img2
+            result.append(self.value_calculator(img1, img2))
+        result_t = torch.tensor(result)
+        return result_t
+
     @timmer
     def test_cnn(self):
         # 生成随机BCHW向量
@@ -281,4 +326,5 @@ if __name__ == "__main__":
     # 创建两个大小为 (B, N, C, H, W) 的张量，并将它们移动到 GPU 上
     tensor1 = torch.randn(B, N, C, H, W).to(device)
     tensor2 = torch.randn(B, N, C, H, W).to(device)
+
     this_sim.get_sim_score(tensor1, tensor2)

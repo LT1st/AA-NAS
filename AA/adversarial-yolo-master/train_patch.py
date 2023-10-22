@@ -40,7 +40,7 @@ class PatchTrainer(object):
 
         self.writer = self.init_tensorboard(mode)
 
-        self.sim_scorer = SimScore(cal_dev=1, fea_method='canny', sim_method='rmse')    # 相似度衡量
+        self.sim_scorer = SimScore(cal_dev=1, fea_method='canny', sim_method='ssim')    # 相似度衡量
         self.gpuid = 0
 
     def init_tensorboard(self, name=None):
@@ -186,7 +186,7 @@ class PatchTrainer(object):
                     loss.backward()
                     optimizer.step()
                     optimizer.zero_grad()
-                    adv_patch_cpu.data.clamp_(0,1)       #keep patch in image range
+                    adv_patch_cpu.data.clamp_(0, 1)       #keep patch in image range
 
                     bt1 = time.time()
                     if i_batch%5 == 0:
@@ -229,6 +229,7 @@ class PatchTrainer(object):
                 print('  DET LOSS: ', ep_det_loss)
                 print('  NPS LOSS: ', ep_nps_loss)
                 print('   TV LOSS: ', ep_tv_loss)
+                print('  SIM LOSS: ', ep_sim_loss)
                 print('EPOCH TIME: ', et1-et0)
                 im = transforms.ToPILImage('RGB')(adv_patch_cpu)
                 # plt.imshow(im)

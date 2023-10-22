@@ -149,7 +149,7 @@ class A4RealWorldObj(BaseConfig):
     def __init__(self):
         super().__init__()
 
-        self.batch_size = 56    # 3090 24G 56
+        self.batch_size = 32    # 3090 24G 56
         self.patch_size = 300
         self.patch_size_x = 210     # A4 paper without thinking print area
         self.patch_size_y = 297
